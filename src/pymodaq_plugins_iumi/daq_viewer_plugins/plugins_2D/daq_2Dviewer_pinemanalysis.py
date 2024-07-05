@@ -14,7 +14,8 @@ file_path = os.path.dirname(os.path.abspath(__file__))
 cnn_folder = Path(file_path) / 'cnns'
 cnn_files = [str(file) for file in cnn_folder.glob('*.h5')]
 
-class DAQ_2DViewer_Template(DAQ_2DViewer_OrsayCamera):
+
+class DAQ_2DViewer_PinemAnalysis(DAQ_2DViewer_OrsayCamera):
     """ Instrument plugin class for a 2D viewer.
     
     This object inherits all functionalities to communicate with PyMoDAQ’s DAQ_Viewer module through inheritance via
@@ -36,6 +37,7 @@ class DAQ_2DViewer_Template(DAQ_2DViewer_OrsayCamera):
     # TODO add your particular attributes here if any
 
     """
+
     def ini_detector(self, controller=None):
         """Detector communication initialization
 
@@ -51,26 +53,9 @@ class DAQ_2DViewer_Template(DAQ_2DViewer_OrsayCamera):
         initialized: bool
             False if initialization failed otherwise True
         """
-        super().ini_detector(controller)
+        info, initialized = super().ini_detector(controller)
         self.pinem_model = PinemAnalysis(cnn_files[0])
-
-    def grab_data(self, Naverage=1, **kwargs):
-        """Start a grab from the detector
-
-        Parameters
-        ----------
-        Naverage: int
-            Number of hardware averaging (if hardware averaging is possible, self.hardware_averaging should be set to
-            True in class preamble and you should code this implementation)
-        kwargs: dict
-            others optionals arguments
-        """
-        ## TODO for your custom plugin: you should choose EITHER the synchrone or the asynchrone version following
-
-        ##synchrone version (blocking function)
-        super().grab_data(Naverage, **kwargs)
-        self.g = self.pinem_model.predict(self.data, False)
-        ########################################################
+        return info, initialized
 
     def emit_data(self):
         """ Method used to emit data obtained by dataUnlocker callback.
@@ -90,12 +75,17 @@ class DAQ_2DViewer_Template(DAQ_2DViewer_OrsayCamera):
                         self.y_axis.index = 0
                         self.x_axis.index = 1
                         axis = [self.x_axis, self.y_axis]
+                    summed_data = np.atleast_1d(np.squeeze(self.data.reshape(
+                                             (self.settings['image_size', 'Ny'],
+                                              self.settings['image_size', 'Nx'])))).sum(axis = 0)
+
+                    g = self.pinem_model.predict(summed_data, False)
                     self.dte_signal.emit(
                         DataToExport('OrsayCamera', data=
                         [DataFromPlugins(name='g value',
-                                                        data=[np.array([self.g])],
-                                                        dim='Data0D', labels=['g pred']),
-                            DataFromPlugins(name=f"Camera {self.settings['model']}",
+                                         data=[np.array([g[0][0]])],
+                                         dim='Data0D', labels=['g pred']),
+                         DataFromPlugins(name=f"Camera {self.settings['model']}",
                                          data=[np.atleast_1d(np.squeeze(self.data.reshape(
                                              (self.settings['image_size', 'Ny'],
                                               self.settings['image_size', 'Nx']))))],
@@ -106,16 +96,16 @@ class DAQ_2DViewer_Template(DAQ_2DViewer_OrsayCamera):
                 if self.spectrum_done:
                     # print("spectrum done")
                     data = DataToExport('OrsaySPIM', data=
-                            [DataFromPlugins(name='SPIM ',
-                                             data=[np.atleast_1d(np.squeeze(self.spimdata.reshape(
-                                                 (self.settings['image_size', 'Nx'],
-                                                  self.settings['camera_mode_settings', 'spim_y'],
-                                                  self.settings['camera_mode_settings', 'spim_x']))))],
-                                             dim='DataND'),
-                             DataFromPlugins(name='Spectrum',
-                                             data=[self.spectrumdata],
-                                             dim='Data1D')
-                             ])
+                    [DataFromPlugins(name='SPIM ',
+                                     data=[np.atleast_1d(np.squeeze(self.spimdata.reshape(
+                                         (self.settings['image_size', 'Nx'],
+                                          self.settings['camera_mode_settings', 'spim_y'],
+                                          self.settings['camera_mode_settings', 'spim_x']))))],
+                                     dim='DataND'),
+                     DataFromPlugins(name='Spectrum',
+                                     data=[self.spectrumdata],
+                                     dim='Data1D')
+                     ])
                     if not self.spim_done:
                         self.spectrum_done = False
                         self.dte_signal_temp.emit(data)
@@ -130,4 +120,4 @@ class DAQ_2DViewer_Template(DAQ_2DViewer_OrsayCamera):
 
 
 if __name__ == '__main__':
-    main(__file__)
+    main(__file__, init=False)
